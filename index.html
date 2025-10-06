@@ -667,6 +667,7 @@
         // Envio de e-mail (opcional via EmailJS; fallback mailto)
         try {
           const flatText = Object.entries(dataToSend)
+            .filter(([k]) => k !== 'createdAt')
             .map(([k,v]) => `${k}: ${v}`)
             .join('\n');
           const subject = encodeURIComponent('Novo Briefing recebido');
@@ -681,8 +682,13 @@
               doc_id: docRef.id
             });
           } else {
-            // Fallback via cliente de e-mail padrão
-            window.open(`mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`, '_blank');
+            // Fallback via cliente de e-mail padrão sem abrir nova aba
+            const link = document.createElement('a');
+            link.href = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            setTimeout(() => { try { document.body.removeChild(link); } catch {} }, 100);
           }
         } catch (mailErr) {
           console.warn('Falha ao enviar e-mail, continuar sem bloquear.', mailErr);
