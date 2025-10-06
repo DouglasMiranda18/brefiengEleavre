@@ -21,6 +21,16 @@
     .meta { color:#3a8b99; font-weight:600 }
     .search { display:flex; gap:8px; margin:8px 0 }
     input, select { padding:8px 10px; border:1px solid #ddd; border-radius:8px; font-family:inherit }
+    .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:.75rem; font-weight:600 }
+    .pill-green { background:#e6f7fa; color:#1b6b76; border:1px solid #cfeef5 }
+    .pill-gray { background:#f0f0f0; color:#666; border:1px solid #e6e6e6 }
+    .muted { color:#777 }
+    .empty { color:#999; font-style:italic }
+    .card-actions { display:flex; gap:8px; flex-wrap:wrap }
+    .btn-light { background:#eef3f5; color:#21535b }
+    .btn-outline { background:#fff; color:#21535b; border:1px solid #cfeef5 }
+    .details { margin-top:8px }
+    .tools { display:flex; gap:8px; align-items:center }
   </style>
 </head>
 <body>
@@ -47,6 +57,11 @@
         <option>20</option>
         <option selected>50</option>
         <option>100</option>
+      </select>
+      <select id="statusFilter">
+        <option value="all" selected>Todos</option>
+        <option value="pending">Pendentes</option>
+        <option value="done">Atendidos</option>
       </select>
       <button id="reload" class="btn">Recarregar</button>
     </div>
@@ -76,6 +91,7 @@
     const qEl = document.getElementById('q');
     const limitEl = document.getElementById('limit');
     const reloadBtn = document.getElementById('reload');
+    const statusFilterEl = document.getElementById('statusFilter');
     const emailEl = document.getElementById('email');
     const passwordEl = document.getElementById('password');
     const signinBtn = document.getElementById('signinBtn');
@@ -113,11 +129,22 @@
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }
 
+    const DONE_KEY = 'brief_attended_';
+    function getAttended(id) { return localStorage.getItem(DONE_KEY + id) === '1'; }
+    function setAttended(id, v) { if (v) localStorage.setItem(DONE_KEY + id, '1'); else localStorage.removeItem(DONE_KEY + id); }
+    function safe(v) { return (v === undefined || v === null || String(v).trim() === '') ? '' : String(v); }
+
     function render(items) {
       const term = (qEl.value || '').toLowerCase();
+      const statusFilter = statusFilterEl.value;
       const filtered = items.filter(obj => {
         if (!term) return true;
         return Object.entries(obj).some(([k,v]) => String(k).toLowerCase().includes(term) || String(v).toLowerCase().includes(term));
+      }).filter(obj => {
+        const done = getAttended(obj.id);
+        if (statusFilter === 'pending') return !done;
+        if (statusFilter === 'done') return done;
+        return true;
       });
       listEl.innerHTML = '';
       for (const it of filtered) {
@@ -127,17 +154,63 @@
         top.className = 'top';
         const created = it.createdAt && it.createdAt.toDate ? it.createdAt.toDate() : null;
         const when = created ? created.toLocaleString() : '—';
-        top.innerHTML = `<div class="meta">${when}</div><div style="opacity:.7">${it.id}</div>`;
+
+        const nome = safe(it.nomeCompleto) || 'Sem nome';
+        const email = safe(it.emailContato) || 'Sem e-mail';
+        const tipo = safe(it.tipoSite) || '—';
+        const done = getAttended(it.id);
+
+        const left = document.createElement('div');
+        left.innerHTML = `
+          <div class="tools">
+            <span class="pill ${done ? 'pill-green' : 'pill-gray'}">${done ? 'ATENDIDO' : 'PENDENTE'}</span>
+            <span class="meta">${when}</span>
+          </div>
+          <div style="margin-top:4px;font-weight:600">${nome} <span class="muted" style="font-weight:500">• ${email}</span></div>
+          <div class="muted" style="margin-top:2px">Tipo de site: ${tipo}</div>
+        `;
+
+        const right = document.createElement('div');
+        const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent('Retorno Briefing')}&body=${encodeURIComponent('Olá ' + nome + ',\n\nSobre seu briefing...')}`;
+        const copyText = `Cliente: ${nome}\nE-mail: ${email}\nTipo do site: ${tipo}\nEnviado: ${when}\nID: ${it.id}`;
+        right.className = 'card-actions';
+        right.innerHTML = `
+          <button class="btn btn-light" data-act="toggle">Ver detalhes</button>
+          <button class="btn btn-outline" data-act="copy">Copiar resumo</button>
+          <a class="btn" href="${mailto}">E-mail</a>
+          <button class="btn" style="background:#826f59" data-act="done">${done ? 'Marcar pendente' : 'Marcar atendido'}</button>
+        `;
+
+        top.appendChild(left);
+        top.appendChild(right);
         card.appendChild(top);
+
+        const details = document.createElement('div');
+        details.className = 'details';
+        details.style.display = 'none';
 
         const tableKeys = Object.keys(it).filter(k => k !== 'createdAt' && k !== 'id');
         for (const k of tableKeys) {
-          const v = it[k];
+          const vraw = it[k];
+          const v = safe(vraw);
           const row = document.createElement('div');
           row.className = 'row';
-          row.innerHTML = `<div class="k">${k}</div><div>${String(v).replace(/\n/g,'<br>')}</div>`;
-          card.appendChild(row);
+          row.innerHTML = `<div class="k">${k}</div><div class="${v ? '' : 'empty'}">${(v || '—').replace(/\n/g,'<br>')}</div>`;
+          details.appendChild(row);
         }
+        card.appendChild(details);
+
+        right.querySelector('[data-act="toggle"]').addEventListener('click', () => {
+          details.style.display = details.style.display === 'none' ? 'block' : 'none';
+        });
+        right.querySelector('[data-act="copy"]').addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(copyText); } catch {}
+        });
+        right.querySelector('[data-act="done"]').addEventListener('click', () => {
+          const current = getAttended(it.id);
+          setAttended(it.id, !current);
+          load();
+        });
         listEl.appendChild(card);
       }
     }
@@ -155,6 +228,7 @@
     reloadBtn.addEventListener('click', load);
     qEl.addEventListener('input', load);
     limitEl.addEventListener('change', load);
+    statusFilterEl.addEventListener('change', load);
 
     onAuthStateChanged(auth, (user) => {
       if (user) {
