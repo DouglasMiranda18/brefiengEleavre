@@ -148,6 +148,14 @@
 
     .success-message { background: #e6f7fa; color: var(--cor-primaria); border-radius: 10px; padding: 1rem; margin-top: 1.2rem; text-align: center; font-weight: 700; font-size: 1rem; box-shadow: 0 1px 4px rgba(58,139,153,0.06); display: none; }
 
+    /* Auth modal */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-card { width: 100%; max-width: 420px; background: #fff; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 16px; }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .modal-title { font-weight: 700; color: var(--cor-primaria); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+    .btn-secondary { background: var(--cor-bg2); color: var(--cor-destaque); border: none; border-radius: 10px; padding: 8px 14px; cursor: pointer; }
+
     @media (max-width: 1024px) {
       .layout { grid-template-columns: 1fr; }
       .side { position: relative; top: 0; order: -1; }
@@ -171,6 +179,7 @@
       <div>
         <h1>Briefing de Criação de Site — Elevare</h1>
         <div class="intro">Preencha este formulário para entendermos estilo, funcionalidades e necessidades do seu projeto.</div>
+        <div class="intro"><a id="adminLink" href="#" style="color:#fff;text-decoration:underline; opacity:0.95">Acessar Admin</a></div>
       </div>
     </div>
     <div class="progress-wrap"><div class="progress-bar"><div class="progress" id="progress"></div></div></div>
@@ -203,9 +212,13 @@
         <fieldset id="sec-identidade" class="section-card">
           <legend><span class="badge">1</span>Identidade Visual e Estilo</legend>
           <div class="grid">
-            <div class="full">
-              <label for="logo">Pode me enviar o logo em alta resolução?</label>
-              <input type="file" id="logo" name="logo" accept="image/png, image/svg+xml, image/jpeg, application/pdf">
+            <div>
+              <label for="nomeCompleto">Seu nome completo</label>
+              <input type="text" id="nomeCompleto" name="nomeCompleto" placeholder="Seu nome">
+            </div>
+            <div>
+              <label for="emailContato">Seu e-mail de contato</label>
+              <input type="email" id="emailContato" name="emailContato" placeholder="voce@exemplo.com">
             </div>
             <div>
               <label for="paleta">Qual a paleta oficial de cores?</label>
@@ -472,10 +485,45 @@
     </main>
   </div>
 
+  <!-- Auth Modal -->
+  <div id="authModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div id="authTitle" class="modal-title">Entrar no Admin</div>
+        <button id="authClose" class="btn-secondary">Fechar</button>
+      </div>
+      <div class="grid">
+        <div class="full">
+          <label for="authEmail">E-mail</label>
+          <input id="authEmail" type="email" placeholder="voce@exemplo.com" />
+        </div>
+        <div class="full">
+          <label for="authPassword">Senha</label>
+          <input id="authPassword" type="password" placeholder="Sua senha" />
+        </div>
+      </div>
+      <div id="authMsg" style="color:#b00; margin-top:8px"></div>
+      <div class="modal-actions">
+        <button id="authSubmit" class="btn">Entrar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // EmailJS (opcional). Se não usar, o envio cairá no fallback via mailto
+    (function(){
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js';
+      s.onload = () => { try { window.emailjs && window.emailjs.init('PUBLIC_KEY_AQUI'); } catch {} };
+      document.head.appendChild(s);
+    })();
+  </script>
+
   <script type="module">
     // Firebase SDK (modular)
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
     import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+    import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
     // Optional: analytics
     // import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-analytics.js';
 
@@ -492,13 +540,25 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
     // const analytics = getAnalytics(app);
+    // --- Config e util de e-mail ---
+    const ADMIN_EMAIL = 'seu-email@exemplo.com'; // substitua pelo seu e-mail
+    const EMAILJS_SERVICE_ID = 'SERVICE_ID_AQUI';
+    const EMAILJS_TEMPLATE_ID = 'TEMPLATE_ID_AQUI';
     // --- Salvamento automático LocalStorage ---
     const form = document.getElementById('briefingForm');
     const autoSaveMsg = document.getElementById('autoSaveMsg');
     const clearBtn = document.getElementById('clearBtn');
     const successMsg = document.getElementById('successMsg');
     const STORAGE_KEY = 'elevare_briefing';
+    const adminLink = document.getElementById('adminLink');
+    const authModal = document.getElementById('authModal');
+    const authClose = document.getElementById('authClose');
+    const authEmail = document.getElementById('authEmail');
+    const authPassword = document.getElementById('authPassword');
+    const authSubmit = document.getElementById('authSubmit');
+    const authMsg = document.getElementById('authMsg');
 
     function loadFormData() {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -527,6 +587,27 @@
       setTimeout(() => { autoSaveMsg.style.opacity = 0.5; }, 2000);
       updateProgress();
     }
+    // --- Admin modal ---
+    function openAuthModal() { authMsg.textContent = ''; authModal.style.display = 'flex'; }
+    function closeAuthModal() { authModal.style.display = 'none'; }
+    if (adminLink) {
+      adminLink.addEventListener('click', (ev) => { ev.preventDefault(); openAuthModal(); });
+    }
+    authClose.addEventListener('click', () => { closeAuthModal(); });
+    authSubmit.addEventListener('click', async () => {
+      authMsg.textContent = '';
+      try {
+        const email = (authEmail.value || '').trim();
+        const password = (authPassword.value || '').trim();
+        if (!email || !password) { authMsg.textContent = 'Informe e-mail e senha.'; return; }
+        await signInWithEmailAndPassword(auth, email, password);
+        closeAuthModal();
+        window.location.href = 'admin.html';
+      } catch (e) {
+        authMsg.textContent = e && e.message ? e.message : 'Erro ao entrar.';
+      }
+    });
+    // Google login removido: apenas contas criadas (email/senha)
 
     clearBtn.addEventListener('click', () => {
       if (confirm('Tem certeza que deseja limpar todas as respostas?')) {
@@ -558,7 +639,7 @@
     // --- Envio do formulário ---
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const obrigatorios = ['paleta', 'tipoSite', 'produtos'];
+      const obrigatorios = ['nomeCompleto', 'emailContato', 'paleta', 'tipoSite', 'produtos'];
       let erro = false;
       obrigatorios.forEach(id => {
         const el = form.elements[id];
@@ -581,13 +662,41 @@
           dataToSend[el.name] = el.value;
         }
         dataToSend.createdAt = serverTimestamp();
-        await addDoc(collection(db, 'briefings'), dataToSend);
+        const docRef = await addDoc(collection(db, 'briefings'), dataToSend);
+
+        // Envio de e-mail (opcional via EmailJS; fallback mailto)
+        try {
+          const flatText = Object.entries(dataToSend)
+            .map(([k,v]) => `${k}: ${v}`)
+            .join('\n');
+          const subject = encodeURIComponent('Novo Briefing recebido');
+          const body = encodeURIComponent(flatText);
+
+          const emailjsAvailable = !!(window.emailjs && EMAILJS_SERVICE_ID !== 'SERVICE_ID_AQUI' && EMAILJS_TEMPLATE_ID !== 'TEMPLATE_ID_AQUI');
+          if (emailjsAvailable) {
+            await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+              to_email: ADMIN_EMAIL,
+              subject: 'Novo Briefing recebido',
+              message: flatText,
+              doc_id: docRef.id
+            });
+          } else {
+            // Fallback via cliente de e-mail padrão
+            window.open(`mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`, '_blank');
+          }
+        } catch (mailErr) {
+          console.warn('Falha ao enviar e-mail, continuar sem bloquear.', mailErr);
+        }
+
         successMsg.style.display = 'block';
         setTimeout(() => { successMsg.style.display = 'none'; }, 6000);
         form.scrollIntoView({ behavior: 'smooth' });
+        // Opcional: limpar armazenamento local após envio bem-sucedido
+        // localStorage.removeItem(STORAGE_KEY);
       } catch (err) {
-        console.error(err);
-        alert('Não foi possível enviar agora. Verifique sua conexão e tente novamente.');
+        console.error('Erro ao enviar briefing:', err);
+        const detalhes = (err && err.message) ? `\n\nDetalhes: ${err.message}` : '';
+        alert('Não foi possível enviar agora. Verifique sua conexão e tente novamente.' + detalhes);
       }
     });
 
